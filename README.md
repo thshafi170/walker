@@ -32,6 +32,45 @@ cargo build --release
 ./target/release/walker
 ```
 
+### Install using Nix
+
+You have two options of installing walker using Nix.
+
+1.  Using the package exposed by this flake
+
+    1. Add to your flake `inputs.walker.url = "github:thshafi170/walker";`
+    2. Add `inputs.walker.packages.<system>.default` to `environment.systemPackages` or `home.packages`
+
+2.  Using the home-manager module exposed by this flake:
+    1. Add to your flake `inputs.walker.url = "github:thshafi170/walker";`
+    2. Add `imports = [inputs.walker.homeManagerModules.default];` into your home-manager config
+    3. Configure walker using:
+
+```nix
+programs.walker = {
+  enable = true;
+  runAsService = true;
+
+  # All options from the config.json can be used here.
+  config = {
+    search.placeholder = "Example";
+    ui.fullscreen = true;
+    list = {
+      height = 200;
+    };
+    websearch.prefix = "?";
+    switcher.prefix = "/";
+  };
+
+  # If this is not set the default styling is used.
+  theme.style = ''
+    * {
+      color: #dcd7ba;
+    }
+  '';
+};
+```
+
 ### Dependencies
 
 - GTK4 (version 4.6+)

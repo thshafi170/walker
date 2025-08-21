@@ -42,10 +42,5 @@
       default = self.nixosModules.walker;
       walker = import ./nix/modules/nixos.nix self;
     };
-
-    nixConfig = {
-      extra-substituters = ["https://walker-git.cachix.org"];
-      extra-trusted-public-keys = ["walker-git.cachix.org-1:vmC0ocfPWh0S/vRAQGtChuiZBTAe4wiKDeyyXM0/7pM="];
-    };
   };
 }
