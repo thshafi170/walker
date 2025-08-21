@@ -4,7 +4,6 @@ use crate::ui::window::get_selected_item;
 use crate::{quit, with_window};
 use gtk4::gdk::ContentProvider;
 use gtk4::gio::File;
-use gtk4::glib::clone::Downgrade;
 use gtk4::glib::{self, Bytes};
 use gtk4::{
     Box as GtkBox, Builder, ContentFit, DragSource, Image, Orientation, Picture, PolicyType,
@@ -30,11 +29,17 @@ impl FilesPreviewHandler {
 }
 
 impl PreviewHandler for FilesPreviewHandler {
+    fn clear_cache(&self) {
+        let mut cached_preview = self.cached_preview.borrow_mut();
+        if let Some(preview) = cached_preview.as_mut() {
+            preview.clear_preview();
+        }
+        *cached_preview = None;
+    }
     fn handle(&self, item: &Item, preview: &GtkBox, builder: &Builder) {
         let preview_clone = preview.clone();
         let builder_clone = builder.clone();
         let file_path = item.text.clone();
-
         let item_clone = item.clone();
 
         if !Path::new(&file_path).exists() {
@@ -47,6 +52,15 @@ impl PreviewHandler for FilesPreviewHandler {
             }
         } else {
             return;
+        }
+
+        {
+            let mut cached_preview = self.cached_preview.borrow_mut();
+            if let Some(existing) = cached_preview.as_ref() {
+                if existing.current_file != item.text {
+                    *cached_preview = None;
+                }
+            }
         }
 
         let mut cached_preview = self.cached_preview.borrow_mut();
@@ -180,6 +194,45 @@ impl FilePreview {
 
     fn clear_preview(&self) {
         while let Some(child) = self.preview_area.first_child() {
+            if let Some(picture) = child.downcast_ref::<Picture>() {
+                picture.set_filename(Option::<&str>::None);
+                picture.set_paintable(gtk4::gdk::Paintable::NONE);
+            }
+
+            if let Some(image) = child.downcast_ref::<Image>() {
+                image.clear();
+                image.set_icon_name(Option::<&str>::None);
+            }
+
+            if let Some(container) = child.downcast_ref::<gtk4::Box>() {
+                while let Some(nested_child) = container.first_child() {
+                    if let Some(nested_picture) = nested_child.downcast_ref::<Picture>() {
+                        nested_picture.set_paintable(gtk4::gdk::Paintable::NONE);
+                    }
+                    if let Some(nested_image) = nested_child.downcast_ref::<Image>() {
+                        nested_image.clear();
+                        nested_image.set_icon_name(Option::<&str>::None);
+                    }
+                    container.remove(&nested_child);
+                }
+            }
+
+            if let Some(scrolled) = child.downcast_ref::<ScrolledWindow>() {
+                if let Some(scrolled_child) = scrolled.child() {
+                    if let Some(text_view) = scrolled_child.downcast_ref::<TextView>() {
+                        text_view.buffer().set_text("");
+                    }
+                    if let Some(picture) = scrolled_child.downcast_ref::<Picture>() {
+                        picture.set_filename(Option::<&str>::None);
+                        picture.set_paintable(gtk4::gdk::Paintable::NONE);
+                    }
+                    if let Some(image) = scrolled_child.downcast_ref::<Image>() {
+                        image.clear();
+                        image.set_icon_name(Option::<&str>::None);
+                    }
+                }
+            }
+
             self.preview_area.remove(&child);
         }
     }
@@ -225,12 +278,8 @@ impl FilePreview {
 
         if let Some(page) = document.page(0) {
             match self.render_pdf_page(&page) {
-                Ok(page_widget) => {
-                    pdf.append(&page_widget);
-                }
-                Err(e) => {
-                    eprintln!("Failed to render PDF page: {}", e);
-                }
+                Ok(page_widget) => pdf.append(&page_widget),
+                Err(e) => eprintln!("Failed to render PDF page: {}", e),
             }
         }
 
@@ -257,9 +306,14 @@ impl FilePreview {
         let target_width = 800.0;
         let display_scale = target_width / width;
 
-        let render_scale = display_scale * 2.0;
-        let render_width = (width * render_scale) as i32;
-        let render_height = (height * render_scale) as i32;
+        let render_scale = (display_scale * 1.5).min(2.0);
+        let render_width = ((width * render_scale) as i32).min(1600);
+        let render_height = ((height * render_scale) as i32).min(2400);
+
+        let estimated_size = (render_width * render_height * 4) as usize;
+        if estimated_size > 15 * 1024 * 1024 {
+            return Err("PDF page too large for preview".into());
+        }
 
         let mut surface =
             cairo::ImageSurface::create(cairo::Format::ARgb32, render_width, render_height)?;
@@ -283,14 +337,18 @@ impl FilePreview {
 
         let bytes = {
             let surface_data = surface.data()?;
+
             let mut rgba_data = Vec::with_capacity(surface_data.len());
 
+            // Convert BGRA to RGBA in chunks to minimize temporary allocations
             for chunk in surface_data.chunks_exact(4) {
                 rgba_data.push(chunk[2]); // R
                 rgba_data.push(chunk[1]); // G
                 rgba_data.push(chunk[0]); // B
                 rgba_data.push(chunk[3]); // A
             }
+
+            std::mem::drop(surface_data);
 
             Bytes::from(&rgba_data)
         };
@@ -380,23 +438,20 @@ impl FilePreview {
         container.set_margin_end(20);
         container.set_size_request(250, 200);
 
-        let file = gio::File::for_path(file_path);
         let icon = Image::from_icon_name("text-x-generic");
         icon.set_icon_size(gtk4::IconSize::Large);
-        let icon_weak = Downgrade::downgrade(&icon);
 
-        let info = file.query_info(
+        // Try to get file-specific icon, but fallback gracefully to avoid memory issues
+        let file = gio::File::for_path(file_path);
+        if let Ok(info) = file.query_info(
             "standard::icon",
             gio::FileQueryInfoFlags::NONE,
             gio::Cancellable::NONE,
-        );
-
-        if let Ok(info) = info {
-            if let Some(image) = icon_weak.upgrade() {
-                if let Some(icon) = info.icon() {
-                    image.set_from_gicon(&icon);
-                }
+        ) {
+            if let Some(file_icon) = info.icon() {
+                icon.set_from_gicon(&file_icon);
             }
+            // Let info be dropped here to release any file metadata
         }
 
         container.append(&icon);

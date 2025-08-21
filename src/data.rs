@@ -160,6 +160,7 @@ fn clear_items() {
     with_window(|w| {
         w.items.remove_all();
     });
+    crate::preview::clear_all_caches();
 }
 
 fn update_existing_item(resp: QueryResponse) {

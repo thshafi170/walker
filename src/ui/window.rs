@@ -11,8 +11,6 @@ use crate::{
     state::{WindowData, with_state},
     theme::{setup_layer_shell, with_themes},
 };
-use gtk4::prelude::GtkWindowExt;
-use gtk4::prelude::WidgetExt;
 use gtk4::prelude::{BoxExt, EditableExt, EventControllerExt, ListItemExt, SelectionModelExt};
 use gtk4::{
     Application, Builder, Entry, EventControllerKey, EventControllerMotion, Label, ListView,
@@ -23,6 +21,8 @@ use gtk4::{
     GridView,
     glib::object::{CastNone, ObjectExt},
 };
+use gtk4::{Image, Picture, prelude::GtkWindowExt};
+use gtk4::{ListItem, prelude::WidgetExt};
 use gtk4::{gio::ListStore, glib::object::Cast};
 use gtk4::{
     gio::prelude::{ApplicationExt, ListModelExt},
@@ -148,6 +148,9 @@ fn setup_window_behavior(ui: &WindowData) {
                 if let Some(k) = &w.keybinds {
                     clear_keybind_hint(k);
                 }
+
+                // Clear preview caches when no items are visible
+                crate::preview::clear_all_caches();
             } else {
                 if let Some(p) = &w.placeholder {
                     p.set_visible(false);
@@ -298,19 +301,13 @@ fn setup_keyboard_handling(ui: &WindowData) {
 
 fn setup_list_behavior(ui: &WindowData) {
     let factory = SignalListItemFactory::new();
+
     factory.connect_unbind(|_, item| {
         let item = item
             .downcast_ref::<gtk4::ListItem>()
             .expect("failed casting to ListItem");
 
-        let child = item.child();
-        let itembox = child
-            .and_downcast_ref::<gtk4::Box>()
-            .expect("failed to cast to box");
-
-        while let Some(child) = itembox.first_child() {
-            itembox.remove(&child);
-        }
+        item.set_child(None::<&gtk4::Widget>);
     });
 
     factory.connect_bind(|_, item| {
@@ -329,15 +326,7 @@ fn setup_list_behavior(ui: &WindowData) {
             with_themes(|t| {
                 if let Some(theme) = t.get(&s.get_theme()) {
                     if let Some(i) = response.item.as_ref() {
-                        let b = Builder::new();
-
-                        if let Some(s) = theme.items.get(&i.provider) {
-                            let _ = b.add_from_string(s);
-                        } else {
-                            let _ = b.add_from_string(theme.items.get("default").unwrap());
-                        }
-
-                        create_item(&item, &i, b);
+                        create_item(&item, &i, theme);
                     }
                 }
             });
@@ -382,6 +371,19 @@ pub fn quit(app: &Application) {
         .contains(gtk4::gio::ApplicationFlags::IS_SERVICE)
     {
         app.active_window().unwrap().set_visible(false);
+
+        with_window(|w| {
+            if let Some(preview) = w.builder.object::<Box>("Preview") {
+                while let Some(child) = preview.first_child() {
+                    child.unparent();
+                }
+            }
+
+            w.preview_builder.borrow_mut().take();
+        });
+
+        // Clear all preview caches
+        crate::preview::clear_all_caches();
 
         with_state(|s| {
             s.set_provider("");
