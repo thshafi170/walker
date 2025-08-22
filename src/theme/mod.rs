@@ -1,6 +1,5 @@
 use crate::config::get_config;
-use crate::state::{has_css_provider, set_css_provider, with_css_provider};
-use crate::ui::window::with_window;
+use crate::state::{set_css_provider, with_css_provider};
 use gtk4::gdk::Display;
 use gtk4::prelude::GtkWindowExt;
 use gtk4::{CssProvider, Window};
@@ -34,6 +33,10 @@ impl Theme {
                 (
                     "default".to_string(),
                     include_str!("../../resources/themes/default/item.xml").to_string(),
+                ),
+                (
+                    "dmenu".to_string(),
+                    include_str!("../../resources/themes/default/item_dmenu.xml").to_string(),
                 ),
                 (
                     "clipboard".to_string(),
@@ -75,17 +78,19 @@ pub fn setup_themes() {
     let output = Command::new("elephant")
         .arg("listproviders")
         .output()
-        .unwrap();
+        .expect("couldn't run 'elephant'. Make sure it is installed.");
 
     let stdout = String::from_utf8(output.stdout).unwrap();
 
-    let providers: Vec<String> = stdout
+    let mut providers: Vec<String> = stdout
         .lines()
         .filter_map(|line| {
             line.split_once(':')
                 .map(|(_, value)| format!("item_{}.xml", value.to_string()))
         })
         .collect();
+
+    providers.push("dmenu".to_string());
 
     let files = vec![
         "item.xml".to_string(),

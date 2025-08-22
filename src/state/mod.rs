@@ -17,16 +17,6 @@ pub fn set_css_provider(provider: CssProvider) {
     });
 }
 
-pub fn has_css_provider() -> bool {
-    CSS_PROVIDER.with(|p| p.borrow().is_some())
-}
-
-pub fn clear_css_provider() {
-    CSS_PROVIDER.with(|p| {
-        *p.borrow_mut() = None;
-    });
-}
-
 pub fn with_css_provider<F, R>(f: F) -> Option<R>
 where
     F: FnOnce(&CssProvider) -> R,
@@ -36,15 +26,22 @@ where
 
 #[derive(Debug, Clone)]
 pub struct AppState {
+    dmenu_keep_open: Cell<bool>,
+    dmenu_exit_after: Cell<bool>,
     initial_height: Cell<i32>,
     initial_width: Cell<i32>,
+    dmenu_current: Cell<i64>,
     parameter_height: Cell<i32>,
     parameter_width: Cell<i32>,
     last_query: RefCell<String>,
+    placeholder: RefCell<String>,
+    initial_placeholder: RefCell<String>,
     provider: RefCell<String>,
     theme: RefCell<String>,
     is_service: Cell<bool>,
     no_search: Cell<bool>,
+    is_dmenu: Cell<bool>,
+    is_param_close: Cell<bool>,
     pub(crate) is_visible: Cell<bool>,
 }
 
@@ -53,14 +50,21 @@ impl AppState {
         Self {
             provider: RefCell::new(String::new()),
             theme: RefCell::new("default".to_string()),
+            placeholder: RefCell::new("default".to_string()),
+            initial_placeholder: RefCell::new("".to_string()),
             last_query: RefCell::new(String::new()),
             is_service: Cell::new(false),
+            is_param_close: Cell::new(false),
             is_visible: Cell::new(false),
             no_search: Cell::new(false),
+            is_dmenu: Cell::new(false),
+            dmenu_keep_open: Cell::new(false),
+            dmenu_exit_after: Cell::new(false),
             initial_height: Cell::new(0),
             parameter_height: Cell::new(0),
             parameter_width: Cell::new(0),
             initial_width: Cell::new(0),
+            dmenu_current: Cell::new(0),
         }
     }
 
@@ -78,6 +82,22 @@ impl AppState {
 
     pub fn set_provider(&self, val: &str) {
         *self.provider.borrow_mut() = val.to_string();
+    }
+
+    pub fn get_initial_placeholder(&self) -> String {
+        self.initial_placeholder.borrow().clone()
+    }
+
+    pub fn set_initial_placeholder(&self, val: &str) {
+        *self.initial_placeholder.borrow_mut() = val.to_string();
+    }
+
+    pub fn get_placeholder(&self) -> String {
+        self.placeholder.borrow().clone()
+    }
+
+    pub fn set_placeholder(&self, val: &str) {
+        *self.placeholder.borrow_mut() = val.to_string();
     }
 
     pub fn get_last_query(&self) -> String {
@@ -100,8 +120,44 @@ impl AppState {
         self.is_visible.set(val);
     }
 
+    pub fn is_param_close(&self) -> bool {
+        self.is_param_close.get()
+    }
+
+    pub fn set_param_close(&self, val: bool) {
+        self.is_param_close.set(val);
+    }
+
+    pub fn is_dmenu_keep_open(&self) -> bool {
+        self.dmenu_keep_open.get()
+    }
+
+    pub fn set_dmenu_keep_open(&self, val: bool) {
+        self.dmenu_keep_open.set(val);
+    }
+
+    pub fn is_dmenu_exit_after(&self) -> bool {
+        self.dmenu_exit_after.get()
+    }
+
+    pub fn set_dmenu_exit_after(&self, val: bool) {
+        self.dmenu_exit_after.set(val);
+    }
+
+    pub fn is_dmenu(&self) -> bool {
+        self.is_dmenu.get()
+    }
+
+    pub fn set_is_dmenu(&self, val: bool) {
+        self.is_dmenu.set(val);
+    }
+
     pub fn is_no_search(&self) -> bool {
         self.no_search.get()
+    }
+
+    pub fn is_service(&self) -> bool {
+        self.is_service.get()
     }
 
     pub fn set_no_search(&self, val: bool) {
@@ -138,6 +194,14 @@ impl AppState {
 
     pub fn get_parameter_width(&self) -> i32 {
         return self.parameter_width.get();
+    }
+
+    pub fn get_dmenu_current(&self) -> i64 {
+        return self.dmenu_current.get();
+    }
+
+    pub fn set_dmenu_current(&self, val: i64) {
+        return self.dmenu_current.set(val);
     }
 }
 

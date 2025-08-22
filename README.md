@@ -77,6 +77,8 @@ programs.walker = {
 - GTK4 (version 4.6+)
 - gtk4-layer-shell
 - Protocol Buffers compiler
+- cairo
+- poppler-glib
 - make sure [elephant](https://github.com/abenz1267/elephant) is running before starting Walker
 - cairo
 - poppler-glib
