@@ -42,7 +42,12 @@ where
     with_state(|s| {
         WINDOWS.with(|windows| {
             let windows_map = windows.get().unwrap();
-            windows_map.get(&s.get_theme()).map(f).unwrap()
+            let theme = s.get_theme();
+
+            windows_map.get(&theme).map(f).unwrap_or_else(|| {
+                println!("theme not found: {}", theme);
+                process::exit(130);
+            })
         })
     })
 }
@@ -524,7 +529,13 @@ pub fn handle_preview() {
     with_window(|w| {
         if let Some(preview) = w.builder.object::<Box>("Preview") {
             if let Some(item) = get_selected_item() {
-                if crate::preview::has_previewer(&item.provider) {
+                let mut provider = item.provider.clone();
+
+                if provider.starts_with("menus:") {
+                    provider = "menus".to_string();
+                }
+
+                if crate::preview::has_previewer(&provider) {
                     let builder = {
                         let mut preview_builder = w.preview_builder.borrow_mut();
                         if preview_builder.is_none() {
@@ -537,9 +548,7 @@ pub fn handle_preview() {
                         preview_builder.as_ref().unwrap().clone()
                     };
 
-                    crate::preview::handle_preview(&item.provider, &item, &preview, &builder);
-
-                    preview.set_visible(true);
+                    crate::preview::handle_preview(&provider, &item, &preview, &builder);
                 } else {
                     preview.set_visible(false);
                 }

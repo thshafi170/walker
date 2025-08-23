@@ -17,7 +17,6 @@ use gtk4::prelude::{EditableExt, EntryExt, GtkWindowExt};
 use config::get_config;
 use state::{init_app_state, with_state};
 
-use std::process;
 use std::sync::{Mutex, mpsc};
 use std::time::Duration;
 use std::{path::Path, thread};
@@ -226,8 +225,6 @@ fn main() -> glib::ExitCode {
                 if let Some(val) = options.lookup_value("theme", Some(VariantTy::STRING)) {
                     s.set_theme(val.str().unwrap());
                 }
-            } else {
-                s.set_theme("default");
             }
 
             if options.contains("height") {
@@ -430,10 +427,10 @@ fn main() -> glib::ExitCode {
     app.connect_startup(move |app| {
         *hold_guard.borrow_mut() = Some(app.hold());
 
-        if !app.flags().contains(ApplicationFlags::IS_SERVICE) {
-            println!("make sure 'walker --gapplication-service' is running!");
-            process::exit(1);
-        }
+        // if !app.flags().contains(ApplicationFlags::IS_SERVICE) {
+        //     println!("make sure 'walker --gapplication-service' is running!");
+        //     process::exit(1);
+        // }
 
         init_app_state();
         init_ui(app);
@@ -459,21 +456,28 @@ fn init_ui(app: &Application) {
         if !s.is_dmenu() {
             println!("Elephant started!");
         }
-    });
 
-    config::load().unwrap();
-    preview::load_previewers();
-    setup_binds().unwrap();
+        config::load().unwrap();
 
-    init_socket().unwrap();
-    start_listening();
+        let theme = if get_config().theme.is_empty() {
+            "default"
+        } else {
+            &get_config().theme
+        };
 
-    setup_css_provider();
-    setup_themes();
-    setup_item_transformers();
-    setup_window(app);
+        s.set_theme(&theme);
 
-    with_state(|s| {
+        preview::load_previewers();
+        setup_binds().unwrap();
+
+        init_socket().unwrap();
+        start_listening();
+
+        setup_css_provider();
+        setup_themes();
+        setup_item_transformers();
+        setup_window(app);
+
         // start_theme_watcher(s.get_theme());
 
         with_window(|w| {
