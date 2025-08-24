@@ -16,7 +16,9 @@ use gtk4::prelude::{EditableExt, EntryExt, GtkWindowExt};
 
 use config::get_config;
 use state::{init_app_state, with_state};
+use which::which;
 
+use std::env;
 use std::sync::{Mutex, mpsc};
 use std::time::Duration;
 use std::{path::Path, thread};
@@ -208,7 +210,7 @@ fn main() -> glib::ExitCode {
         let options = cmd.options_dict();
 
         if options.contains("version") {
-            cmd.print_literal("1.0.0-beta\n");
+            cmd.print_literal("1.0.0-beta-9\n");
             return 0;
         }
 
@@ -280,7 +282,9 @@ fn main() -> glib::ExitCode {
                     let mut i = 0;
 
                     with_window(|w| {
-                        w.input.set_text("");
+                        if let Some(input) = &w.input {
+                            input.set_text("");
+                        }
 
                         let items = &w.items;
                         items.remove_all();
@@ -333,7 +337,7 @@ fn main() -> glib::ExitCode {
                                     "CNCLD" => {
                                         cmd_clone.set_exit_status(130);
                                     }
-                                    msg => cmd_clone.print_literal(msg),
+                                    msg => cmd_clone.print_literal(&format!("{}\n", msg)),
                                 };
 
                                 GLOBAL_DMENU_SENDER.with(|s| {
@@ -382,7 +386,10 @@ fn main() -> glib::ExitCode {
                 with_window(|w| {
                     if let Some(placeholders) = &cfg.placeholders {
                         if let Some(placeholder) = placeholders.get(&p) {
-                            w.input.set_placeholder_text(Some(&placeholder.input));
+                            if let Some(input) = &w.input {
+                                input.set_placeholder_text(Some(&placeholder.input));
+                            }
+
                             w.placeholder
                                 .as_ref()
                                 .map(|p| p.set_text(&placeholder.list));
@@ -390,31 +397,43 @@ fn main() -> glib::ExitCode {
                     }
 
                     if !s.get_placeholder().is_empty() {
-                        if let Some(p) = w.input.placeholder_text() {
-                            s.set_initial_placeholder(&p);
-                        }
+                        if let Some(input) = &w.input {
+                            if let Some(p) = input.placeholder_text() {
+                                s.set_initial_placeholder(&p);
+                            }
 
-                        w.input.set_placeholder_text(Some(&s.get_placeholder()));
+                            input.set_placeholder_text(Some(&s.get_placeholder()));
+                        }
                     }
 
                     if s.get_parameter_height() != 0 {
-                        w.scroll.set_min_content_height(s.get_parameter_height());
+                        s.set_initial_height(w.scroll.max_content_height());
                         w.scroll.set_max_content_height(s.get_parameter_height());
+                        w.scroll.set_min_content_height(s.get_parameter_height());
+                    } else {
+                        s.set_initial_height(0);
                     }
 
                     if s.get_parameter_width() != 0 {
-                        w.scroll.set_min_content_width(s.get_parameter_width());
+                        s.set_initial_width(w.scroll.max_content_width());
                         w.scroll.set_max_content_width(s.get_parameter_width());
+                        w.scroll.set_min_content_width(s.get_parameter_width());
+                    } else {
+                        s.set_initial_width(0);
                     }
 
                     if s.is_no_search() {
-                        w.search_container.set_visible(false);
+                        if let Some(search_container) = &w.search_container {
+                            search_container.set_visible(false);
+                        }
                     }
 
                     setup_css(s.get_theme());
 
-                    w.input.emit_by_name::<()>("changed", &[]);
-                    w.input.grab_focus();
+                    if let Some(input) = &w.input {
+                        input.emit_by_name::<()>("changed", &[]);
+                        input.grab_focus();
+                    }
 
                     w.window.present();
                 });
@@ -440,21 +459,9 @@ fn main() -> glib::ExitCode {
 }
 
 fn init_ui(app: &Application) {
-    if app.flags().contains(ApplicationFlags::IS_SERVICE) {
-        with_state(|s| {
-            s.set_is_service(true);
-        });
-    }
-
     with_state(|s| {
-        if !s.is_dmenu() {
-            println!("Waiting for elephant to start...");
-        }
-
-        wait_for_file("/tmp/elephant.sock");
-
-        if !s.is_dmenu() {
-            println!("Elephant started!");
+        if app.flags().contains(ApplicationFlags::IS_SERVICE) {
+            s.set_is_service(true);
         }
 
         config::load().unwrap();
@@ -470,8 +477,21 @@ fn init_ui(app: &Application) {
         preview::load_previewers();
         setup_binds().unwrap();
 
-        init_socket().unwrap();
-        start_listening();
+        let args: Vec<String> = env::args().collect();
+
+        let mut dmenu = false;
+
+        if args.contains(&"--dmenu".to_string()) || args.contains(&"-d".to_string()) {
+            dmenu = true;
+        }
+
+        if which("elephant").is_ok() && !dmenu {
+            println!("waiting for elephant to start...");
+            wait_for_file("/tmp/elephant.sock");
+            println!("connecting to elephant...");
+            init_socket().unwrap();
+            start_listening();
+        }
 
         setup_css_provider();
         setup_themes();
@@ -479,11 +499,6 @@ fn init_ui(app: &Application) {
         setup_window(app);
 
         // start_theme_watcher(s.get_theme());
-
-        with_window(|w| {
-            s.set_initial_width(w.scroll.max_content_width());
-            s.set_initial_height(w.scroll.max_content_height());
-        });
     });
 }
 
